@@ -34,6 +34,10 @@ from pathlib import Path
 BASIS = Path(__file__).resolve().parent
 DB_PFAD = BASIS / "verkehr.sqlite"
 MESSUNGEN_ORDNER = BASIS / "messungen"
+SEGMENTE_ORDNER = BASIS / "segmente"
+# Altbestand aus frueheren Laeufen. Wird noch gelesen, aber nicht mehr
+# geschrieben - eine gemeinsam beschriebene Datei fuehrt zu Merge-Konflikten,
+# sobald sich zwei Laeufe ueberschneiden.
 SEGMENTE_DATEI = BASIS / "segmente.json"
 LOG_PFAD = BASIS / "collect.log"
 
@@ -218,9 +222,29 @@ def in_db_schreiben(con, ts, segmente, messwerte):
 
 # ---------------------------------------------------------------- Ablage: Dateien
 
+def bekannte_segmente_lesen():
+    """Vereinigt die Geometrie aus allen Teildateien. Spaetere Dateien
+    ueberschreiben fruehere bei gleichem Schluessel."""
+    bekannt = {}
+    if SEGMENTE_DATEI.exists():
+        with open(SEGMENTE_DATEI, encoding="utf-8") as f:
+            bekannt.update(json.load(f))
+    if SEGMENTE_ORDNER.exists():
+        for pfad in sorted(SEGMENTE_ORDNER.glob("*.json")):
+            with open(pfad, encoding="utf-8") as f:
+                bekannt.update(json.load(f))
+    return bekannt
+
+
 def in_dateien_schreiben(jetzt, ts, quelle_stand, segmente, messwerte):
-    """Legt die Messwerte als eine kleine gzip-Datei pro Lauf ab und ergaenzt
-    segmente.json um bisher unbekannte Abschnitte."""
+    """Legt die Messwerte als eine kleine gzip-Datei pro Lauf ab, und neu
+    entdeckte Abschnitte als eigene Datei unter segmente/.
+
+    Beide Dateinamen enthalten den Zeitstempel und sind damit eindeutig. Kein
+    Lauf beschreibt eine Datei, die ein anderer anfasst - deshalb kann es beim
+    Zurueckschreiben ins Repo keine Merge-Konflikte geben, auch wenn sich zwei
+    Laeufe ueberschneiden. Genau daran ist die frueher gemeinsam beschriebene
+    segmente.json gescheitert."""
     tag_ordner = MESSUNGEN_ORDNER / jetzt.strftime("%Y-%m-%d")
     tag_ordner.mkdir(parents=True, exist_ok=True)
     ziel = tag_ordner / (jetzt.strftime(DATEI_FORMAT) + ".json.gz")
@@ -231,16 +255,13 @@ def in_dateien_schreiben(jetzt, ts, quelle_stand, segmente, messwerte):
             f, separators=(",", ":"), ensure_ascii=False,
         )
 
-    bekannt = {}
-    if SEGMENTE_DATEI.exists():
-        with open(SEGMENTE_DATEI, encoding="utf-8") as f:
-            bekannt = json.load(f)
-
+    bekannt = bekannte_segmente_lesen()
     neu = {k: v for k, v in segmente.items() if k not in bekannt}
     if neu:
-        bekannt.update(neu)
-        with open(SEGMENTE_DATEI, "w", encoding="utf-8") as f:
-            json.dump(bekannt, f, separators=(",", ":"), ensure_ascii=False)
+        SEGMENTE_ORDNER.mkdir(exist_ok=True)
+        pfad = SEGMENTE_ORDNER / (jetzt.strftime(DATEI_FORMAT) + ".json")
+        with open(pfad, "w", encoding="utf-8") as f:
+            json.dump(neu, f, separators=(",", ":"), ensure_ascii=False)
     return len(neu), ziel
 
 

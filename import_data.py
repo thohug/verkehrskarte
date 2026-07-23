@@ -22,12 +22,11 @@ BASIS = Path(__file__).resolve().parent
 
 
 def main():
-    if not collect.SEGMENTE_DATEI.exists():
-        print("segmente.json fehlt. Zuerst 'git pull', oder collect.py --kompakt laufen lassen.")
+    segmente = collect.bekannte_segmente_lesen()
+    if not segmente:
+        print("Keine Geometrie gefunden (weder segmente/ noch segmente.json).")
+        print("Zuerst 'git pull', oder collect.py --kompakt laufen lassen.")
         return 1
-
-    with open(collect.SEGMENTE_DATEI, encoding="utf-8") as f:
-        segmente = json.load(f)
 
     dateien = sorted(collect.MESSUNGEN_ORDNER.glob("*/*.json.gz"))
     if not dateien:

@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import collect
@@ -20,6 +21,7 @@ import collect
 ARBEITSORDNER = Path(tempfile.mkdtemp(prefix="verkehrskarte-test-"))
 collect.DB_PFAD = ARBEITSORDNER / "verkehr.sqlite"
 collect.MESSUNGEN_ORDNER = ARBEITSORDNER / "messungen"
+collect.SEGMENTE_ORDNER = ARBEITSORDNER / "segmente"
 collect.SEGMENTE_DATEI = ARBEITSORDNER / "segmente.json"
 collect.LOG_PFAD = ARBEITSORDNER / "collect.log"
 
@@ -74,9 +76,28 @@ def main():
     pruefe(collect.main(["--kompakt"]) == 0, "main() endet mit 0")
     pruefe(len(list(collect.MESSUNGEN_ORDNER.glob("*/*.json.gz"))) == 1,
            "genau 1 Messdatei")
-    pruefe(collect.SEGMENTE_DATEI.exists(), "segmente.json angelegt")
-    with open(collect.SEGMENTE_DATEI, encoding="utf-8") as f:
-        pruefe(len(json.load(f)) == 1, "1 Segment in segmente.json")
+    pruefe(len(list(collect.SEGMENTE_ORDNER.glob("*.json"))) == 1,
+           "genau 1 Segmentdatei angelegt")
+    pruefe(len(collect.bekannte_segmente_lesen()) == 1, "1 Segment bekannt")
+
+    print("2b) Zweiter Lauf mit denselben Segmenten")
+    # Dateinamen haben Sekundenaufloesung - ohne Abstand wuerde der zweite Lauf
+    # den ersten ueberschreiben statt eine zweite Datei anzulegen.
+    time.sleep(1.1)
+    # Kern der Konfliktvermeidung: nur wirklich neue Abschnitte erzeugen eine
+    # Datei. Sonst schriebe jeder Lauf dieselbe Datei neu, und zwei
+    # gleichzeitige Laeufe kollidierten beim Zurueckschreiben ins Repo.
+    pruefe(collect.main(["--kompakt"]) == 0, "main() endet mit 0")
+    pruefe(len(list(collect.MESSUNGEN_ORDNER.glob("*/*.json.gz"))) == 2,
+           "jetzt 2 Messdateien")
+    pruefe(len(list(collect.SEGMENTE_ORDNER.glob("*.json"))) == 1,
+           "weiterhin nur 1 Segmentdatei (nichts neu geschrieben)")
+
+    print("2c) Altbestand segmente.json wird weiter gelesen")
+    with open(collect.SEGMENTE_DATEI, "w", encoding="utf-8") as f:
+        json.dump({"altertest": {"d": "Altstrasse", "l": 1.0, "p": [[47.0, 8.0]]}}, f)
+    pruefe(len(collect.bekannte_segmente_lesen()) == 2,
+           "alte und neue Geometrie zusammengefuehrt")
 
     print("3) API-Fehler")
 

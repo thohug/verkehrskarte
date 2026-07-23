@@ -36,18 +36,27 @@ jobs:
         run: |
           git config user.name  "verkehrskarte-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add messungen segmente.json
+          git add messungen segmente
           if git diff --staged --quiet; then
             echo "Nichts Neues zu committen."
             exit 0
           fi
           git commit -m "Messung $(date -u '+%Y-%m-%d %H:%M')Z"
-          # Bei gleichzeitig laufenden Jobs kann der Push veralten - einmal
-          # nachziehen und erneut versuchen.
+
+          # Ein anderer Lauf kann in der Zwischenzeit gepusht haben. Da jeder
+          # Lauf nur eindeutig benannte Dateien anlegt und keine bestehende
+          # aendert, ist der Rebase immer konfliktfrei. Sollte doch einer
+          # auftreten, brechen wir sauber ab statt das Arbeitsverzeichnis in
+          # einem halben Rebase stehen zu lassen.
           for versuch in 1 2 3; do
             if git push; then exit 0; fi
-            echo "Push fehlgeschlagen, ziehe nach (Versuch $versuch)"
-            git pull --rebase --autostash
+            echo "Push abgelehnt, ziehe nach (Versuch $versuch)"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "Rebase-Konflikt - das sollte nicht vorkommen." >&2
+              exit 1
+            fi
           done
           echo "Push nach drei Versuchen fehlgeschlagen." >&2
           exit 1

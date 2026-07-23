@@ -149,12 +149,19 @@ Minuten stellen.
 | `install_task.ps1` | Registriert den Sammler im Windows-Taskplaner |
 | `.github/workflows/sammeln.yml` | Derselbe Sammler, alle 15 Minuten bei GitHub |
 | `messungen/` | Ein gzip pro Lauf, nur Messwerte — das ist die Messreihe |
-| `segmente.json` | Geometrie und Namen, einmalig |
+| `segmente/` | Geometrie und Namen, eine Datei je Lauf mit neu entdeckten Abschnitten |
+| `segmente.json` | Altbestand aus den ersten Läufen, wird noch gelesen |
 | `verkehr.sqlite` | Lokal aus dem Obigen erzeugt, nicht im Repo |
 | `collect.log` | Protokoll jedes Laufs |
 
 Lokaler Betrieb und GitHub Actions lassen sich mischen: `import_data.py`
 überspringt Zeitschritte, die schon in der Datenbank stehen.
+
+Jeder Lauf legt ausschliesslich neue, nach Zeitstempel benannte Dateien an und
+ändert keine bestehende. Deshalb können sich zwei überlappende Läufe beim
+Zurückschreiben ins Repo nicht in die Quere kommen. Eine gemeinsam
+beschriebene Datei — anfangs war das `segmente.json` — führt dagegen
+zuverlässig zu Merge-Konflikten, sobald sich Läufe überschneiden.
 
 ## Datenbank
 
