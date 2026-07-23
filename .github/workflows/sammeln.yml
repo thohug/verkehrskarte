@@ -22,16 +22,15 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
+      # Bewusst kein actions/setup-python: der ubuntu-latest-Runner bringt
+      # Python 3 mit, und collect.py kommt mit der Standardbibliothek aus.
+      # Ein Schritt weniger, und eine Action weniger, die veralten kann.
       - name: Verkehrslage abrufen
         env:
           HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
-        run: python collect.py --kompakt
+        run: python3 collect.py --kompakt
 
       - name: Ergebnis committen
         run: |
