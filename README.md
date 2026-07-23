@@ -113,6 +113,32 @@ jedem Lauf selbst committet, läuft die Frist nie ab.
 pro Tag, 19 MB pro Monat, gut 110 MB im halben Jahr. Unkritisch. Die Geometrie
 liegt nur einmal in `segmente.json`, deshalb ist es so wenig.
 
+## Auswertung testen, bevor genug Daten da sind
+
+**Fertiges Ergebnis ansehen** — echte Geometrie deines Quartiers, erfundene
+Messwerte über 14 Tage:
+
+```bash
+py demo.py
+```
+
+Schreibt `demo.html`, deutlich als Demo gekennzeichnet. So sieht die Karte aus,
+wenn die Messreihe voll ist: Stundenregler mit sichtbarer Morgen- und
+Abendspitze, ruhigeres Wochenende. Deine echte `verkehr.sqlite` wird dabei
+nicht angefasst — die Demo schreibt nur nach `demo.sqlite`.
+
+**Aktuellen echten Stand ansehen**, auch mit erst zwei, drei Messungen:
+
+```bash
+py build_map.py --min 1
+```
+
+Normalerweise blendet der Kartenbau Zeitfenster mit weniger als 3 Messungen
+aus, damit ein einzelner Ausreisser keine Strasse rot färbt. `--min 1` hebt das
+auf. Zum Hinschauen gut, für Schlussfolgerungen nicht.
+
+Weitere Optionen: `--db PFAD`, `--html PFAD`, `--help`.
+
 ## Wie lange sammeln?
 
 Für eine belastbare Aussage über eine Tagesganglinie brauchst du pro

@@ -4,9 +4,11 @@ karte.html
 collect.log
 __pycache__/
 
+# Ergebnis von demo.py - erfundene Daten, gehoert nicht ins Repo
+demo.sqlite
+demo.html
+
 # Falls du lokal sammelst und den Key in die Config schreibst statt in
 # die Umgebungsvariable: diese Zeile einkommentieren, damit er nicht
 # oeffentlich wird.
 # config.json
-demo.sqlite
-demo.html
