@@ -1,0 +1,39 @@
+{
+  "gebiet_name": "Quartier",
+
+  "_kommentar_bbox": "Reihenfolge: west, sued, ost, nord. Das ist das umschliessende Rechteck des Polygons unten - HERE kann nur Rechtecke abfragen.",
+  "bbox": {
+    "west": 8.7388,
+    "sued": 47.4884,
+    "ost": 8.7785,
+    "nord": 47.5101
+  },
+
+  "_kommentar_polygon": "Optional. Beim Kartenbau werden Segmente ausserhalb dieses Umrisses weggelassen. Reihenfolge der Paare wie in GeoJSON: [Laengengrad, Breitengrad]. Auf null setzen, um das ganze Rechteck zu zeigen.",
+  "polygon": [
+    [8.7388951, 47.5029852],
+    [8.7390126, 47.4973084],
+    [8.7526451, 47.4910751],
+    [8.7659251, 47.4888515],
+    [8.7784999, 47.4884545],
+    [8.7779711, 47.4978642],
+    [8.7733290, 47.5070738],
+    [8.7669240, 47.5090187],
+    [8.7577573, 47.5100110],
+    [8.7512349, 47.5060021],
+    [8.7447712, 47.5036998],
+    [8.7388951, 47.5029852]
+  ],
+
+  "_kommentar_key": "Leer lassen! Der Key gehoert in die Umgebungsvariable HERE_API_KEY bzw. in die GitHub-Secrets - diese Datei liegt im oeffentlichen Repo.",
+  "here_api_key": "",
+
+  "_kommentar_zeit": "Zeitzone fuer die Auswertung. Die Rohdaten werden immer in UTC gespeichert.",
+  "zeitzone": "Europe/Zurich",
+
+  "_kommentar_filter": "Nur Segmente ab dieser Strassenklasse erfassen. 1 = Autobahn ... 5 = Quartierstrasse. [1,2,3,4,5] = alles. Weniger Klassen = kleinere Antwort und weniger Speicher.",
+  "strassenklassen": [1, 2, 3, 4, 5],
+
+  "_kommentar_deep": "Erweiterte Abdeckung anfordern. Im Raum Winterthur gemessen: 42 statt 23 Segmenten. Kostet nichts extra.",
+  "deep_coverage": true
+}

@@ -1,0 +1,10 @@
+# Wird lokal aus messungen/ neu aufgebaut, gehoert nicht ins Repo
+verkehr.sqlite
+karte.html
+collect.log
+__pycache__/
+
+# Falls du lokal sammelst und den Key in die Config schreibst statt in
+# die Umgebungsvariable: diese Zeile einkommentieren, damit er nicht
+# oeffentlich wird.
+# config.json
