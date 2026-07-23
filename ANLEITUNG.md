@@ -26,21 +26,16 @@ setx HERE_API_KEY "dein-key-hier"
 
 ---
 
-## Schritt 1 — Lokal committen
+## Schritt 1 — Lokalen Stand prüfen
 
-Im Ordner `verkehrskarte`:
-
-```bash
-git init && git add . && git commit -m "Verkehrskarte" && git branch -M main
-```
-
-Prüfe, was hochgeladen wird:
+Das Git-Repo ist bereits angelegt und alles ist committet. Kontrolliere nur,
+was hochgeladen wird:
 
 ```bash
-git status --short && git ls-files
+git ls-files
 ```
 
-Es müssen **genau diese Dateien** erscheinen:
+Es müssen **genau diese 13 Dateien** erscheinen:
 
 ```
 .github/workflows/sammeln.yml
@@ -54,11 +49,21 @@ config.json
 import_data.py
 install_task.ps1
 test_collect.py
+test_geometrie.py
 tomtom_test.py
 ```
 
 Nicht dabei sein dürfen `verkehr.sqlite`, `karte.html` und `collect.log` — die
 stehen in `.gitignore`, weil sie sich lokal jederzeit neu erzeugen lassen.
+
+Und zur Sicherheit, bevor etwas öffentlich wird:
+
+```bash
+git grep -i "here_api_key.*[A-Za-z0-9_-]\{20\}"
+```
+
+Diese Suche darf **nichts** finden. Schlägt sie an, steht dein Key in einer
+Datei und gehört dort entfernt.
 
 ---
 
