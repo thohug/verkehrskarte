@@ -105,8 +105,9 @@ def zeitzone_laden(name):
         return None
 
 
-def daten_aggregieren(con, tz):
+def daten_aggregieren(con, tz, min_messungen=None):
     """Liefert pro Segment die Mittelwerte je (Tagtyp, Stunde) und gesamt."""
+    schwelle = MIN_MESSUNGEN if min_messungen is None else min_messungen
     segmente = {
         r[0]: {"d": r[1], "p": json.loads(r[2])}
         for r in con.execute("SELECT seg_key, beschreibung, punkte_json FROM segments")
@@ -138,7 +139,7 @@ def daten_aggregieren(con, tz):
             continue
         werte = {}
         for bucket, (s_jam, s_ratio, n) in buckets.items():
-            if n < MIN_MESSUNGEN:
+            if n < schwelle:
                 continue
             werte[bucket] = [round(s_jam / n, 2), round(s_ratio / n, 3), n]
         if not werte:
@@ -183,6 +184,11 @@ HTML_VORLAGE = """<!doctype html>
   }
   .panel h1 { margin:0 0 2px; font-size:15px; font-weight:600; }
   .panel .meta { font-size:12px; opacity:.65; margin-bottom:12px; }
+  .warnung {
+    display:block; margin:6px 0 8px; padding:5px 8px; border-radius:6px;
+    background:#ffd8d8; color:#8a1010; font-weight:600; opacity:1;
+  }
+  @media (prefers-color-scheme: dark) { .warnung { background:#5a1a1a; color:#ffd0d0; } }
   .zeile { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
   .tabs { display:flex; gap:4px; margin-bottom:12px; }
   .tabs button {
@@ -312,23 +318,29 @@ zeichnen();
 """
 
 
-def main():
-    if not DB_PFAD.exists():
-        print("Keine Datenbank gefunden. Zuerst collect.py ein paar Mal laufen lassen.")
+def karte_bauen(db_pfad=None, html_pfad=None, min_messungen=None, warnung=None):
+    db_pfad = Path(db_pfad or DB_PFAD)
+    html_pfad = Path(html_pfad or HTML_PFAD)
+    schwelle = MIN_MESSUNGEN if min_messungen is None else min_messungen
+
+    if not db_pfad.exists():
+        print(f"Keine Datenbank unter {db_pfad}. "
+              "Zuerst collect.py ein paar Mal laufen lassen.")
         return 1
 
     cfg = config_laden()
     tz = zeitzone_laden(cfg.get("zeitzone", "Europe/Zurich"))
 
-    con = sqlite3.connect(DB_PFAD)
-    daten = daten_aggregieren(con, tz)
+    con = sqlite3.connect(db_pfad)
+    daten = daten_aggregieren(con, tz, schwelle)
     von, bis, n_runs = zeitraum(con)
     con.close()
 
     if not daten:
         print(
-            f"Noch zu wenig Daten (mindestens {MIN_MESSUNGEN} Messungen pro Zeitfenster "
-            "noetig). Sammler laenger laufen lassen."
+            f"Noch zu wenig Daten (mindestens {schwelle} Messungen pro Zeitfenster "
+            "noetig). Sammler laenger laufen lassen, oder --min 1 setzen, um den "
+            "aktuellen Stand trotzdem anzusehen."
         )
         return 1
 
@@ -351,6 +363,8 @@ def main():
         f"{len(daten)} Strassenabschnitte &middot; {n_runs} Messl&auml;ufe<br>"
         f"{hübsch(von)} bis {hübsch(bis)}"
     )
+    if warnung:
+        meta = f'<span class="warnung">{warnung}</span>' + meta
 
     html = (
         HTML_VORLAGE.replace("__NAME__", cfg.get("gebiet_name", ""))
@@ -358,10 +372,41 @@ def main():
         .replace("__DATEN__", json.dumps(daten, separators=(",", ":"), ensure_ascii=False))
         .replace("__POLYGON__", json.dumps(polygon, separators=(",", ":")) if polygon else "null")
     )
-    HTML_PFAD.write_text(html, encoding="utf-8")
-    print(f"Geschrieben: {HTML_PFAD}  ({len(daten)} Segmente, {n_runs} Laeufe)")
+    html_pfad.write_text(html, encoding="utf-8")
+    print(f"Geschrieben: {html_pfad}  ({len(daten)} Segmente, {n_runs} Laeufe)")
     return 0
 
 
+def main(argv):
+    """Argumente:
+      --db PFAD     andere Datenbank verwenden (Vorgabe verkehr.sqlite)
+      --html PFAD   andere Ausgabedatei    (Vorgabe karte.html)
+      --min N       Mindestzahl Messungen je Zeitfenster (Vorgabe 3).
+                    --min 1 zeigt auch einen ganz frischen Stand.
+    """
+    werte = {"--db": None, "--html": None, "--min": None, "--warnung": None}
+    rest = list(argv)
+    while rest:
+        schluessel = rest.pop(0)
+        if schluessel in ("-h", "--help"):
+            print(main.__doc__)
+            return 0
+        if schluessel not in werte:
+            print(f"Unbekanntes Argument: {schluessel}")
+            print(main.__doc__)
+            return 2
+        if not rest:
+            print(f"{schluessel} braucht einen Wert.")
+            return 2
+        werte[schluessel] = rest.pop(0)
+
+    return karte_bauen(
+        db_pfad=werte["--db"],
+        html_pfad=werte["--html"],
+        min_messungen=int(werte["--min"]) if werte["--min"] else None,
+        warnung=werte["--warnung"],
+    )
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

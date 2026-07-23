@@ -8,3 +8,5 @@ __pycache__/
 # die Umgebungsvariable: diese Zeile einkommentieren, damit er nicht
 # oeffentlich wird.
 # config.json
+demo.sqlite
+demo.html
