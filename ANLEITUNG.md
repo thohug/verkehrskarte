@@ -92,7 +92,7 @@ GitHub rundet jeden Job auf ganze Minuten auf. 96 Läufe am Tag ergeben rund
 GitHub zeigt dir die passenden Zeilen an. Mit deinem Benutzernamen:
 
 ```bash
-git remote add origin https://github.com/DEIN-NAME/verkehrskarte.git && git push -u origin main
+git remote add origin https://github.com/DEIN-NAME/verkehrskarte.git; git push -u origin main
 ```
 
 Beim ersten Mal fragt Git nach Zugangsdaten. Als Passwort brauchst du ein
@@ -160,7 +160,7 @@ git pull
 ```
 
 ```bash
-py import_data.py && py build_map.py
+py import_data.py; py build_map.py
 ```
 
 Dann `karte.html` per Doppelklick öffnen.
@@ -172,15 +172,24 @@ kannst das also beliebig oft laufen lassen, es wird nur das Neue nachgezogen.
 
 ## Was danach passiert
 
-Der Workflow läuft alle 15 Minuten und committet jedes Mal. Rechne mit:
+Rechne mit:
 
-- **80–90 Messungen pro Tag** statt 96 — GitHub verschiebt geplante Läufe
-  routinemässig um 5 bis 30 Minuten. Für die Auswertung ist das unerheblich,
-  weil nach Stunde gruppiert wird.
-- **rund 19 MB Zuwachs im Monat** im Repo bei 400 Segmenten. In deinem Gebiet
+- **Rund 17 Läufe pro Tag**, nicht 96. GitHub hält den 15-Minuten-Takt nicht
+  ein — gemessen lagen im Mittel 90 Minuten dazwischen, in Spitzen über drei
+  Stunden. Deshalb misst jeder Lauf sechsmal im Abstand von fünf Minuten, was
+  auf etwa 100 Messungen täglich führt.
+- **Jeder Lauf dauert rund 25 Minuten**, weil er zwischen den Messungen wartet.
+  Das ist normal und kein hängender Job.
+- **Rund 19 MB Zuwachs im Monat** im Repo bei 400 Segmenten. In deinem Gebiet
   mit 40 Segmenten ist es entsprechend weniger, etwa 2 MB.
-- **Ab 3 Tagen** trägt die Gesamtkarte, **ab 2 Wochen** die Werktags-Stundenkurven,
-  **ab 3–4 Wochen** die Wochenendansicht.
+- **Ab 3 Tagen** trägt die Gesamtkarte, **ab 1–2 Wochen** die
+  Werktags-Stundenkurven, **ab 3–4 Wochen** die Wochenendansicht.
+
+Auswerten geht am schnellsten mit:
+
+```powershell
+.\aktualisieren.ps1
+```
 
 ## Anhalten
 

@@ -249,6 +249,12 @@ def in_dateien_schreiben(jetzt, ts, quelle_stand, segmente, messwerte):
     tag_ordner.mkdir(parents=True, exist_ok=True)
     ziel = tag_ordner / (jetzt.strftime(DATEI_FORMAT) + ".json.gz")
 
+    # Dateinamen haben Sekundenaufloesung. Bei den ueblichen Abstaenden von
+    # Minuten kann es keine Kollision geben - sollte doch eine auftreten, soll
+    # sie auffallen statt eine Messung stillschweigend zu ueberschreiben.
+    if ziel.exists():
+        log(f"WARNUNG: {ziel.name} existiert bereits und wird ueberschrieben")
+
     with gzip.open(ziel, "wt", encoding="utf-8") as f:
         json.dump(
             {"ts_utc": ts, "quelle_stand": quelle_stand, "m": messwerte},
@@ -267,24 +273,14 @@ def in_dateien_schreiben(jetzt, ts, quelle_stand, segmente, messwerte):
 
 # ---------------------------------------------------------------- Ablauf
 
-def main(argv):
-    kompakt = "--kompakt" in argv
+def einmal_sammeln(cfg, con, kompakt):
+    """Ein Zeitschritt. Gibt True zurueck, wenn die Messung gespeichert wurde."""
     jetzt = datetime.now(timezone.utc).replace(microsecond=0)
     ts = jetzt.isoformat()
     start = time.monotonic()
 
-    try:
-        cfg = config_laden()
-    except SystemExit as e:
-        log(str(e))
-        return 1
-
-    con = None
-    if not kompakt:
-        con = sqlite3.connect(DB_PFAD)
-        schema_anlegen(con)
-
     status, n_segmente, quelle_stand, fehler = "ok", 0, None, None
+    erfolg = True
     try:
         daten = json.loads(abrufen(url_bauen(cfg)))
         quelle_stand = daten.get("sourceUpdated")
@@ -304,9 +300,8 @@ def main(argv):
             log(f"ok: {n_segmente} Segmente ({neu} neu), Stand {quelle_stand}")
     except Exception as e:
         status, fehler = "fehler", str(e)[:500]
+        erfolg = False
         log(f"FEHLER: {fehler}")
-        if kompakt:
-            return 1  # im CI soll der Lauf sichtbar rot werden
 
     if con is not None:
         con.execute(
@@ -316,7 +311,70 @@ def main(argv):
              int((time.monotonic() - start) * 1000)),
         )
         con.commit()
+    return erfolg
+
+
+def wert_lesen(argv, name, vorgabe):
+    if name not in argv:
+        return vorgabe
+    i = argv.index(name)
+    if i + 1 >= len(argv):
+        raise SystemExit(f"{name} braucht einen Wert.")
+    return int(argv[i + 1])
+
+
+def main(argv):
+    """Argumente:
+      --kompakt            Dateien statt Datenbank schreiben (fuer GitHub Actions)
+      --wiederholen N      N Messungen in einem Aufruf (Vorgabe 1)
+      --abstand SEKUNDEN   Pause zwischen den Messungen (Vorgabe 300)
+    """
+    if "-h" in argv or "--help" in argv:
+        print(main.__doc__)
+        return 0
+
+    kompakt = "--kompakt" in argv
+    try:
+        anzahl = max(1, wert_lesen(argv, "--wiederholen", 1))
+        abstand = max(0, wert_lesen(argv, "--abstand", 300))
+    except SystemExit as e:
+        log(str(e))
+        return 2
+
+    try:
+        cfg = config_laden()
+    except SystemExit as e:
+        log(str(e))
+        return 1
+
+    con = None
+    if not kompakt:
+        con = sqlite3.connect(DB_PFAD)
+        schema_anlegen(con)
+
+    gelungen = 0
+    for i in range(anzahl):
+        if i > 0:
+            # Zwischen den Messungen warten, damit sie sich zeitlich
+            # unterscheiden. HERE aktualisiert die Lage im Minutenbereich -
+            # zu dicht beieinander liegende Abfragen liefern dasselbe Bild.
+            log(f"warte {abstand}s bis zur naechsten Messung ({i+1}/{anzahl})")
+            time.sleep(abstand)
+        if einmal_sammeln(cfg, con, kompakt):
+            gelungen += 1
+
+    if con is not None:
         con.close()
+
+    if anzahl > 1:
+        log(f"{gelungen} von {anzahl} Messungen gespeichert")
+
+    # Im lokalen Betrieb nie hart scheitern - der Taskplaner soll weiterlaufen,
+    # der Fehler steht in der Tabelle runs. Im CI dagegen soll der Lauf rot
+    # werden, aber erst wenn ALLE Messungen misslungen sind: eine einzelne
+    # Stoerung darf die anderen nicht entwerten.
+    if kompakt and gelungen == 0:
+        return 1
     return 0
 
 

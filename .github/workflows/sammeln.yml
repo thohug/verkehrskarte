@@ -19,7 +19,9 @@ concurrency:
 jobs:
   sammeln:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Der Job misst mehrfach und wartet dazwischen: 6 Messungen im Abstand von
+    # 5 Minuten dauern rund 25 Minuten. Reserve fuer langsame API-Antworten.
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v7
@@ -27,10 +29,15 @@ jobs:
       # Bewusst kein actions/setup-python: der ubuntu-latest-Runner bringt
       # Python 3 mit, und collect.py kommt mit der Standardbibliothek aus.
       # Ein Schritt weniger, und eine Action weniger, die veralten kann.
+      # Mehrere Messungen je Aufruf. Grund: GitHub haelt den 15-Minuten-Takt
+      # nicht ein - gemessen lagen zwischen zwei Laeufen im Mittel 90 Minuten,
+      # in Spitzen ueber drei Stunden. Statt auf den naechsten Lauf zu warten,
+      # misst ein Lauf mehrfach und deckt so ein Zeitfenster ab.
+      # Misslingt eine einzelne Messung, laufen die uebrigen weiter.
       - name: Verkehrslage abrufen
         env:
           HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
-        run: python3 collect.py --kompakt
+        run: python3 collect.py --kompakt --wiederholen 6 --abstand 300
 
       - name: Ergebnis committen
         run: |

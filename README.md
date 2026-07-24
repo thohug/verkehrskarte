@@ -63,7 +63,7 @@ braucht aber ein **öffentliches** Repo — siehe Begründung unten.
 **1. Repo anlegen und hochladen.**
 
 ```bash
-git init && git add . && git commit -m "Verkehrskarte" && git branch -M main
+git init; git add .; git commit -m "Verkehrskarte"; git branch -M main
 ```
 
 Dann auf GitHub ein **öffentliches** Repo erstellen und pushen.
@@ -98,12 +98,20 @@ auch privat.
 
 ### Was du wissen solltest
 
-**Der Takt wird nicht eingehalten.** GitHub verschiebt geplante Läufe
-routinemässig um 5 bis 30 Minuten, in Lastspitzen um mehr als eine Stunde. Für
-diese Auswertung ist das unerheblich: der Zeitstempel wird beim tatsächlichen
-Lauf gesetzt und nach Stunde gruppiert. Die Messreihe wird ungleichmässig,
-nicht falsch. Rechne aber damit, dass du statt 96 Messungen pro Tag eher 80–90
-bekommst.
+**Der Takt wird nicht eingehalten — deutlich nicht.** Über 16 Stunden gemessen
+lagen zwischen zwei Läufen im Mittel **90 Minuten**, mit Abständen von 60 bis
+196 Minuten. Aus dem 15-Minuten-Takt werden faktisch rund **17 Läufe pro Tag
+statt 96**. Verlass dich nicht auf den Cron-Ausdruck.
+
+Deshalb misst der Workflow **mehrfach pro Lauf**: sechs Messungen im Abstand von
+fünf Minuten, gesteuert über `--wiederholen 6 --abstand 300`. Damit deckt ein
+Lauf ein Zeitfenster von 25 Minuten ab statt eines einzelnen Augenblicks, und du
+landest bei rund 100 Messungen am Tag. Misslingt eine einzelne, laufen die
+übrigen weiter; erst wenn alle scheitern, wird der Lauf rot.
+
+Für die Auswertung ist die Ungleichmässigkeit unerheblich: der Zeitstempel
+entsteht bei der tatsächlichen Messung, gruppiert wird nach Stunde. Die
+Messreihe wird ungleichmässig, nicht falsch.
 
 **Die 60-Tage-Abschaltung trifft dich nicht.** GitHub deaktiviert geplante
 Workflows in Repos ohne Commit-Aktivität nach 60 Tagen. Da dieser Workflow bei
@@ -141,13 +149,17 @@ Weitere Optionen: `--db PFAD`, `--html PFAD`, `--help`.
 
 ## Wie lange sammeln?
 
-Für eine belastbare Aussage über eine Tagesganglinie brauchst du pro
-Zeitfenster mehrere Messungen. Bei 15-Minuten-Takt heisst das:
+Entscheidend ist nicht die Gesamtzahl der Messungen, sondern wie viele davon in
+jedes einzelne Stundenfach fallen. Es gibt 48 Fächer: 24 Stunden mal Werktag
+und Wochenende. Bei rund 100 Messungen am Tag:
 
 - **Ab 3 Tagen** ist die Gesamtkarte aussagekräftig.
-- **Ab 2 Wochen** werden die Stundenkurven für Werktage stabil.
+- **Ab 1–2 Wochen** werden die Stundenkurven für Werktage stabil.
 - **Wochenende braucht länger**, weil pro Woche nur zwei Tage anfallen — rechne
   mit 3–4 Wochen, bis die Wochenend-Ansicht trägt.
+
+Wie es tatsächlich steht, verrät die Abfrage `Fuellstand der Stundenfaecher`
+weiter unten.
 
 `build_map.py` blendet Zeitfenster mit weniger als 3 Messungen aus, statt sie
 auf dünner Basis einzufärben. Der Schwellwert steht oben in der Datei.
@@ -169,9 +181,12 @@ Minuten stellen.
 | Datei | Zweck |
 |---|---|
 | `config.json` | Gebiet, API-Key, Zeitzone, Filter |
-| `collect.py` | Ein Aufruf = ein Zeitschritt. `--kompakt` schreibt Dateien statt Datenbank |
+| `collect.py` | Sammelt. `--kompakt` schreibt Dateien statt Datenbank, `--wiederholen N --abstand S` misst mehrfach |
 | `import_data.py` | Baut aus `messungen/` die lokale Datenbank |
-| `build_map.py` | Aggregiert und schreibt `karte.html` |
+| `build_map.py` | Aggregiert und schreibt `karte.html`. Optionen `--min`, `--db`, `--html` |
+| `aktualisieren.ps1` | Holen, auswerten, Karte öffnen — in einem Aufruf |
+| `demo.py` | Auswertung mit erfundenen Werten ansehen, bevor genug Daten da sind |
+| `abdeckung.py` | Zeigt, welche Strassen überhaupt Daten liefern |
 | `install_task.ps1` | Registriert den Sammler im Windows-Taskplaner |
 | `.github/workflows/sammeln.yml` | Derselbe Sammler, alle 15 Minuten bei GitHub |
 | `messungen/` | Ein gzip pro Lauf, nur Messwerte — das ist die Messreihe |
@@ -202,6 +217,13 @@ GROUP BY stunde ORDER BY stunde;
 SELECT s.beschreibung, ROUND(AVG(m.jam_factor),2) AS jam, COUNT(*) AS n
 FROM messungen m JOIN segments s USING (seg_key)
 GROUP BY seg_key HAVING n > 20 ORDER BY jam DESC LIMIT 10;
+
+-- Fuellstand der Stundenfaecher: wie weit ist die Messreihe?
+SELECT CASE WHEN CAST(strftime('%w', ts_utc) AS INT) IN (0,6)
+            THEN 'Wochenende' ELSE 'Werktag' END AS tagtyp,
+       strftime('%H', ts_utc) AS stunde, COUNT(DISTINCT ts_utc) AS messungen
+FROM runs WHERE status='ok'
+GROUP BY tagtyp, stunde ORDER BY tagtyp, stunde;
 
 -- Ausfaelle kontrollieren
 SELECT status, COUNT(*) FROM runs GROUP BY status;
