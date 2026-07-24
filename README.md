@@ -158,8 +158,21 @@ und Wochenende. Bei rund 100 Messungen am Tag:
 - **Wochenende braucht länger**, weil pro Woche nur zwei Tage anfallen — rechne
   mit 3–4 Wochen, bis die Wochenend-Ansicht trägt.
 
-Wie es tatsächlich steht, verrät die Abfrage `Fuellstand der Stundenfaecher`
-weiter unten.
+Wie es tatsächlich steht:
+
+```bash
+py status.py
+```
+
+Zeigt eine Tabelle mit allen 48 Fächern und wie viele Messungen in jedem
+liegen. Ein Fach mit weniger als drei Messungen bleibt in der Stundenansicht
+leer — die Karte ist dann nicht kaputt, sie hat für diese Stunde schlicht noch
+keine Grundlage. Die Gesamtansicht funktioniert von Anfang an.
+
+Die Mehrfachmessung hilft hier besonders: sechs Messungen eines Laufs fallen
+alle in dieselbe Stunde und füllen das Fach auf einen Schlag. Vorher brauchte
+es dafür drei verschiedene Tage, an denen zufällig dieselbe Stunde getroffen
+wurde.
 
 `build_map.py` blendet Zeitfenster mit weniger als 3 Messungen aus, statt sie
 auf dünner Basis einzufärben. Der Schwellwert steht oben in der Datei.
@@ -185,6 +198,7 @@ Minuten stellen.
 | `import_data.py` | Baut aus `messungen/` die lokale Datenbank |
 | `build_map.py` | Aggregiert und schreibt `karte.html`. Optionen `--min`, `--db`, `--html` |
 | `aktualisieren.ps1` | Holen, auswerten, Karte öffnen — in einem Aufruf |
+| `status.py` | Wie weit ist die Messreihe? Füllstand der 48 Stundenfächer |
 | `demo.py` | Auswertung mit erfundenen Werten ansehen, bevor genug Daten da sind |
 | `abdeckung.py` | Zeigt, welche Strassen überhaupt Daten liefern |
 | `install_task.ps1` | Registriert den Sammler im Windows-Taskplaner |
