@@ -105,16 +105,34 @@ def zeitzone_laden(name):
         return None
 
 
-def daten_aggregieren(con, tz, min_messungen=None):
-    """Liefert pro Segment die Mittelwerte je (Tagtyp, Stunde) und gesamt."""
-    schwelle = MIN_MESSUNGEN if min_messungen is None else min_messungen
+# Aufloesung des Streuungs-Histogramms: 20 Faecher von 0 bis 10, Breite 0.5.
+HIST_FAECHER = 20
+HIST_BREITE = 10.0 / HIST_FAECHER
+
+
+def _fach(jam):
+    return min(HIST_FAECHER - 1, int(jam / HIST_BREITE))
+
+
+def daten_aggregieren(con, tz):
+    """Pro Segment die Verteilung des Stauwerts je (Wochentag, Stunde).
+
+    Bewusst NICHT nach Werktag/Wochenende vorverdichtet und ohne Schwelle:
+    beides passiert erst im Browser. So kann man dort frei nach Wochentagen
+    filtern und die Streuung je Auswahl zeichnen, ohne die Karte neu zu bauen.
+    Als Nebeneffekt fuellt sich die Werktagsansicht schneller, weil sie fuenf
+    Tage zusammenfasst.
+
+    Je (Wochentag 0..6, Stunde 0..23) wird gespeichert:
+      [summe_jam, summe_ratio, histogramm]   mit histogramm = 20 Faecher.
+    Die Zahl der Messungen ergibt sich als Summe des Histogramms."""
     segmente = {
         r[0]: {"d": r[1], "p": json.loads(r[2])}
         for r in con.execute("SELECT seg_key, beschreibung, punkte_json FROM segments")
     }
 
-    # summe[seg][bucket] = [summe_jam, summe_ratio, anzahl]
-    summe = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0, 0]))
+    summe = defaultdict(
+        lambda: defaultdict(lambda: [0.0, 0.0, [0] * HIST_FAECHER]))
 
     zeilen = con.execute(
         "SELECT ts_utc, seg_key, jam_factor, speed_ms, free_flow_ms "
@@ -122,34 +140,21 @@ def daten_aggregieren(con, tz, min_messungen=None):
     )
     for ts_utc, seg, jam, speed, frei in zeilen:
         lokal = datetime.fromisoformat(ts_utc).astimezone(tz)
-        tagtyp = "we" if lokal.weekday() >= 5 else "wt"
-        # Verhaeltnis Ist- zu Freifluss-Geschwindigkeit: 1.0 = freie Fahrt
-        ratio = (speed / frei) if (speed is not None and frei) else None
-
-        for bucket in (f"{tagtyp}-{lokal.hour}", "alle"):
-            eintrag = summe[seg][bucket]
-            eintrag[0] += jam
-            if ratio is not None:
-                eintrag[1] += ratio
-            eintrag[2] += 1
+        key = f"{lokal.weekday()}-{lokal.hour}"
+        eintrag = summe[seg][key]
+        eintrag[0] += jam
+        if speed is not None and frei:
+            eintrag[1] += speed / frei  # 1.0 = freie Fahrt
+        eintrag[2][_fach(jam)] += 1
 
     ausgabe = []
     for seg, buckets in summe.items():
         if seg not in segmente:
             continue
-        werte = {}
-        for bucket, (s_jam, s_ratio, n) in buckets.items():
-            if n < schwelle:
-                continue
-            werte[bucket] = [round(s_jam / n, 2), round(s_ratio / n, 3), n]
-        if not werte:
-            continue
+        h = {key: [round(sj, 2), round(sr, 3), hist]
+             for key, (sj, sr, hist) in buckets.items()}
         ausgabe.append(
-            {
-                "d": segmente[seg]["d"],
-                "p": segmente[seg]["p"],
-                "v": werte,
-            }
+            {"d": segmente[seg]["d"], "p": segmente[seg]["p"], "h": h}
         )
     return ausgabe
 
@@ -196,8 +201,19 @@ HTML_VORLAGE = """<!doctype html>
     border:1px solid rgba(128,128,128,.4); background:transparent; color:inherit; border-radius:6px;
   }
   .tabs button.aktiv { background:#0b6ef4; border-color:#0b6ef4; color:#fff; }
+  .wtage { display:flex; gap:3px; margin-bottom:8px; }
+  .wtage button {
+    flex:1; padding:5px 0; font-size:12px; cursor:pointer;
+    border:1px solid rgba(128,128,128,.4); background:transparent; color:inherit; border-radius:5px;
+  }
+  .wtage button.an { background:#0b6ef4; border-color:#0b6ef4; color:#fff; }
+  .presets { display:flex; gap:10px; font-size:11px; margin-bottom:10px; }
+  .presets a { color:#0b6ef4; cursor:pointer; text-decoration:none; }
+  .presets a:hover { text-decoration:underline; }
   input[type=range] { width:100%; }
   .stunde { font-variant-numeric:tabular-nums; font-weight:600; min-width:74px; text-align:right; }
+  .tt-titel { font-weight:600; margin-bottom:2px; }
+  .tt-cap { font-size:11px; opacity:.6; margin-top:2px; }
   .skala { display:flex; height:9px; border-radius:5px; overflow:hidden; margin-top:14px; }
   .skala div { flex:1; }
   .skala-text { display:flex; justify-content:space-between; font-size:11px; opacity:.65; margin-top:4px; }
@@ -210,14 +226,24 @@ HTML_VORLAGE = """<!doctype html>
   <div class="meta">__META__</div>
 
   <div class="tabs">
-    <button data-modus="alle" class="aktiv">Gesamt</button>
-    <button data-modus="wt">Werktag</button>
-    <button data-modus="we">Wochenende</button>
+    <button data-modus="gesamt" class="aktiv">Gesamt</button>
+    <button data-modus="stunde">Nach Uhrzeit</button>
   </div>
 
-  <div class="zeile" id="stundenZeile" style="display:none">
-    <input type="range" id="stunde" min="0" max="23" value="8">
-    <span class="stunde" id="stundeLabel">08:00</span>
+  <div id="filter" style="display:none">
+    <div class="wtage">
+      <button data-tag="0">Mo</button><button data-tag="1">Di</button>
+      <button data-tag="2">Mi</button><button data-tag="3">Do</button>
+      <button data-tag="4">Fr</button><button data-tag="5">Sa</button>
+      <button data-tag="6">So</button>
+    </div>
+    <div class="presets">
+      <a data-preset="wt">Werktag</a><a data-preset="we">Wochenende</a><a data-preset="alle">alle Tage</a>
+    </div>
+    <div class="zeile">
+      <input type="range" id="stunde" min="0" max="23" value="8">
+      <span class="stunde" id="stundeLabel">08:00</span>
+    </div>
   </div>
 
   <div class="skala">
@@ -231,6 +257,10 @@ HTML_VORLAGE = """<!doctype html>
 <script>
 const SEGMENTE = __DATEN__;
 const UMRISS = __POLYGON__;
+const MIN = __MIN__;              // Mindestzahl Messungen, sonst ausgegraut
+const HB = __HISTBREITE__;        // Breite eines Histogramm-Fachs
+const FAECHER = 20;
+const WTAGE = ['Mo','Di','Mi','Do','Fr','Sa','So'];
 
 const karte = L.map('karte');
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -263,7 +293,8 @@ function mische(a, b, t) {
   return `rgb(${m(r1,r2)},${m(g1,g2)},${m(b1,b2)})`;
 }
 
-let modus = 'alle', stunde = 8;
+let modus = 'gesamt', stunde = 8;
+let tage = new Set([0,1,2,3,4,5,6]);   // gewaehlte Wochentage im Stundenmodus
 const linien = [];
 const grenzen = L.latLngBounds([]);
 
@@ -277,23 +308,73 @@ for (const seg of SEGMENTE) {
 }
 karte.fitBounds(grenzen.isValid() ? grenzen : [[47.37,8.50],[47.39,8.54]]);
 
-function schluessel() { return modus === 'alle' ? 'alle' : `${modus}-${stunde}`; }
+// Fasst die Verteilungen ueber die aktuell gewaehlten Wochentage und Stunden
+// zusammen. Im Gesamtmodus alle Tage und alle Stunden, sonst die Auswahl.
+function verdichten(seg) {
+  const wtage = modus === 'gesamt' ? [0,1,2,3,4,5,6] : [...tage];
+  const stunden = modus === 'gesamt' ? Array.from({length:24}, (_,i)=>i) : [stunde];
+  let sj = 0, sr = 0;
+  const hist = new Array(FAECHER).fill(0);
+  for (const t of wtage) for (const h of stunden) {
+    const b = seg.h[t + '-' + h];
+    if (!b) continue;
+    sj += b[0]; sr += b[1];
+    for (let i = 0; i < FAECHER; i++) hist[i] += b[2][i];
+  }
+  const n = hist.reduce((a, c) => a + c, 0);
+  if (n === 0) return null;
+  return { jam: sj / n, ratio: sr / n, n, hist };
+}
+
+// Kleines Balkendiagramm der Streuung, eingefaerbt wie die Karte, mit
+// gestrichelter Linie beim Mittelwert.
+function histSvg(hist, mean) {
+  const W = 188, H = 52, bw = W / FAECHER, max = Math.max(...hist, 1);
+  let s = `<svg width="${W}" height="${H+14}" style="display:block;margin-top:4px">`;
+  for (let i = 0; i < FAECHER; i++) {
+    const h = hist[i] / max * (H - 4);
+    if (h > 0) s += `<rect x="${(i*bw).toFixed(1)}" y="${(H-h).toFixed(1)}" `
+      + `width="${(bw-0.6).toFixed(1)}" height="${h.toFixed(1)}" fill="${farbe(i*HB+HB/2)}"/>`;
+  }
+  const mx = (mean / 10 * W).toFixed(1);
+  s += `<line x1="${mx}" y1="0" x2="${mx}" y2="${H}" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/>`;
+  s += `<text x="0" y="${H+11}" font-size="9" fill="currentColor" opacity=".6">0</text>`;
+  s += `<text x="${W/2-4}" y="${H+11}" font-size="9" fill="currentColor" opacity=".6">5</text>`;
+  s += `<text x="${W-14}" y="${H+11}" font-size="9" fill="currentColor" opacity=".6">10</text>`;
+  return s + '</svg>';
+}
+
+function auswahlText() {
+  if (modus === 'gesamt') return 'alle Tage, ganzer Tag';
+  const tg = [...tage].sort().map(t => WTAGE[t]).join(' ');
+  return `${tg}, ${String(stunde).padStart(2,'0')}:00`;
+}
 
 function zeichnen() {
-  const k = schluessel();
+  const cap = auswahlText();
   for (const linie of linien) {
-    const w = linie._seg.v[k];
-    if (!w) { linie.setStyle({ opacity: .12, color: '#999' }); linie.unbindTooltip(); continue; }
-    const [jam, ratio, n] = w;
-    linie.setStyle({ opacity: .9, color: farbe(jam) });
+    const a = verdichten(linie._seg);
+    if (!a || a.n < MIN) {
+      linie.setStyle({ opacity: .12, color: '#999' });
+      linie.unbindTooltip();
+      continue;
+    }
+    linie.setStyle({ opacity: .9, color: farbe(a.jam) });
     linie.bindTooltip(
-      `<b>${linie._seg.d || 'ohne Namen'}</b><br>` +
-      `Stauwert ${jam.toFixed(1)} / 10<br>` +
-      `Tempo ${Math.round(ratio*100)} % vom Freifluss<br>` +
-      `<span style="opacity:.6">${n} Messungen</span>`,
+      `<div class="tt-titel">${linie._seg.d || 'ohne Namen'}</div>` +
+      `Stauwert &oslash; ${a.jam.toFixed(1)} / 10<br>` +
+      `Tempo ${Math.round(a.ratio*100)} % vom Freifluss<br>` +
+      `<span style="opacity:.6">${a.n} Messungen</span>` +
+      histSvg(a.hist, a.jam) +
+      `<div class="tt-cap">Streuung Stauwert &middot; ${cap}</div>`,
       { sticky: true }
     );
   }
+}
+
+function tageAnzeigen() {
+  document.querySelectorAll('.wtage button').forEach(b =>
+    b.classList.toggle('an', tage.has(+b.dataset.tag)));
 }
 
 document.querySelectorAll('.tabs button').forEach(b => {
@@ -301,16 +382,37 @@ document.querySelectorAll('.tabs button').forEach(b => {
     document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('aktiv'));
     b.classList.add('aktiv');
     modus = b.dataset.modus;
-    document.getElementById('stundenZeile').style.display = modus === 'alle' ? 'none' : 'flex';
+    document.getElementById('filter').style.display = modus === 'gesamt' ? 'none' : 'block';
     zeichnen();
   };
 });
+
+document.querySelectorAll('.wtage button').forEach(b => {
+  b.onclick = () => {
+    const t = +b.dataset.tag;
+    if (tage.has(t)) { if (tage.size > 1) tage.delete(t); }  // mind. einer bleibt
+    else tage.add(t);
+    tageAnzeigen();
+    zeichnen();
+  };
+});
+
+document.querySelectorAll('.presets a').forEach(a => {
+  a.onclick = () => {
+    const p = a.dataset.preset;
+    tage = new Set(p === 'wt' ? [0,1,2,3,4] : p === 'we' ? [5,6] : [0,1,2,3,4,5,6]);
+    tageAnzeigen();
+    zeichnen();
+  };
+});
+
 document.getElementById('stunde').oninput = e => {
   stunde = +e.target.value;
   document.getElementById('stundeLabel').textContent = String(stunde).padStart(2,'0') + ':00';
   zeichnen();
 };
 
+tageAnzeigen();
 zeichnen();
 </script>
 </body>
@@ -332,16 +434,13 @@ def karte_bauen(db_pfad=None, html_pfad=None, min_messungen=None, warnung=None):
     tz = zeitzone_laden(cfg.get("zeitzone", "Europe/Zurich"))
 
     con = sqlite3.connect(db_pfad)
-    daten = daten_aggregieren(con, tz, schwelle)
+    daten = daten_aggregieren(con, tz)
     von, bis, n_runs = zeitraum(con)
     con.close()
 
     if not daten:
-        print(
-            f"Noch zu wenig Daten (mindestens {schwelle} Messungen pro Zeitfenster "
-            "noetig). Sammler laenger laufen lassen, oder --min 1 setzen, um den "
-            "aktuellen Stand trotzdem anzusehen."
-        )
+        print("Noch keine Messungen in der Datenbank. Zuerst collect.py laufen "
+              "lassen (bzw. import_data.py nach dem git pull).")
         return 1
 
     polygon = cfg.get("polygon")
@@ -371,6 +470,8 @@ def karte_bauen(db_pfad=None, html_pfad=None, min_messungen=None, warnung=None):
         .replace("__META__", meta)
         .replace("__DATEN__", json.dumps(daten, separators=(",", ":"), ensure_ascii=False))
         .replace("__POLYGON__", json.dumps(polygon, separators=(",", ":")) if polygon else "null")
+        .replace("__MIN__", str(schwelle))
+        .replace("__HISTBREITE__", repr(HIST_BREITE))
     )
     html_pfad.write_text(html, encoding="utf-8")
     print(f"Geschrieben: {html_pfad}  ({len(daten)} Segmente, {n_runs} Laeufe)")

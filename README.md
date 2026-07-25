@@ -2,7 +2,9 @@
 
 Sammelt über mehrere Tage die Strassenbelastung in einem Gebiet und rendert
 daraus eine Karte — Strassen eingefärbt nach mittlerem Stauwert, mit
-Schieberegler über die Tagesstunden.
+Schieberegler über die Tagesstunden und Filter nach einzelnen Wochentagen. Wer
+über einen Abschnitt fährt, sieht ein kleines Diagramm der Streuung für den
+gewählten Zeitpunkt.
 
 Datenquelle ist die **HERE Traffic API v7** (`/flow`). Ein Request pro
 Zeitschritt liefert alle Strassensegmente in der Bounding Box, jeweils mit
@@ -54,6 +56,19 @@ py build_map.py
 ```
 
 Erzeugt `karte.html`, per Doppelklick zu öffnen.
+
+### Was die Karte zeigt
+
+- **Gesamt** — mittlerer Stauwert über alle Messungen.
+- **Nach Uhrzeit** — Schieberegler über die 24 Stunden, dazu wählbare
+  Wochentage (einzeln antippbar, oder die Voreinstellungen *Werktag*,
+  *Wochenende*, *alle Tage*). „Werktag" fasst Mo–Fr zusammen, füllt sich also
+  fünfmal schneller als ein einzelner Tag.
+- **Streuung beim Hovern** — fährt man über einen Abschnitt, erscheint ein
+  kleines Balkendiagramm: wie oft welcher Stauwert in genau dieser Auswahl
+  vorkam, mit gestrichelter Linie beim Mittelwert. Ein breiter Balkenberg heisst
+  „mal frei, mal Stau", ein schmaler „zuverlässig gleich". Das Diagramm folgt
+  der gewählten Uhrzeit und den gewählten Wochentagen.
 
 ## Im Netz laufen lassen (GitHub Actions)
 
