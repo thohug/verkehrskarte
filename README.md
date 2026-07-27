@@ -113,16 +113,21 @@ auch privat.
 
 ### Was du wissen solltest
 
-**Der Takt wird nicht eingehalten — deutlich nicht.** Über 16 Stunden gemessen
-lagen zwischen zwei Läufen im Mittel **90 Minuten**, mit Abständen von 60 bis
-196 Minuten. Aus dem 15-Minuten-Takt werden faktisch rund **17 Läufe pro Tag
-statt 96**. Verlass dich nicht auf den Cron-Ausdruck.
+**Der Takt wird nicht eingehalten — deutlich nicht.** Beobachtet wurden Lücken
+von einer bis fast **vier Stunden** zwischen zwei tatsächlichen Läufen. Verlass
+dich nicht auf den Cron-Ausdruck; GitHub behandelt geplante Läufe auf dem
+Gratis-Tier als „best effort" und verschiebt oder überspringt sie unter Last.
 
-Deshalb misst der Workflow **mehrfach pro Lauf**: sechs Messungen im Abstand von
-fünf Minuten, gesteuert über `--wiederholen 6 --abstand 300`. Damit deckt ein
-Lauf ein Zeitfenster von 25 Minuten ab statt eines einzelnen Augenblicks, und du
-landest bei rund 100 Messungen am Tag. Misslingt eine einzelne, laufen die
-übrigen weiter; erst wenn alle scheitern, wird der Lauf rot.
+Deshalb misst **jeder Lauf über rund zwei Stunden**: 24 Messungen im Abstand von
+fünf Minuten (`--wiederholen 24 --abstand 300` bzw. die Schleife im Workflow),
+mit einem Commit nach jeder Messung. So überbrückt eine einzige Ausführung die
+typische Lücke, und die Daten erscheinen laufend im Repo statt gebündelt am
+Ende der zwei Stunden. Misslingt eine einzelne Messung, laufen die übrigen
+weiter; erst wenn alle scheitern, wird der Lauf rot.
+
+Nebeneffekt: weil ein Zwei-Stunden-Lauf fast durchgehend läuft und GitHub je
+Workflow nur einen wartenden Lauf vorhält, sammelt das Ganze quasi
+ununterbrochen — ohne dass sich Läufe aufstauen.
 
 Für die Auswertung ist die Ungleichmässigkeit unerheblich: der Zeitstempel
 entsteht bei der tatsächlichen Messung, gruppiert wird nach Stunde. Die

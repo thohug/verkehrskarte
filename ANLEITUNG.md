@@ -174,12 +174,15 @@ kannst das also beliebig oft laufen lassen, es wird nur das Neue nachgezogen.
 
 Rechne mit:
 
-- **Rund 17 Läufe pro Tag**, nicht 96. GitHub hält den 15-Minuten-Takt nicht
-  ein — gemessen lagen im Mittel 90 Minuten dazwischen, in Spitzen über drei
-  Stunden. Deshalb misst jeder Lauf sechsmal im Abstand von fünf Minuten, was
-  auf etwa 100 Messungen täglich führt.
-- **Jeder Lauf dauert rund 25 Minuten**, weil er zwischen den Messungen wartet.
-  Das ist normal und kein hängender Job.
+- **GitHub feuert unzuverlässig.** Der geplante Takt wird nicht eingehalten —
+  beobachtet wurden Lücken von einer bis fast vier Stunden zwischen zwei
+  Läufen. Deshalb misst **jeder Lauf über rund zwei Stunden** (24 Messungen im
+  Abstand von fünf Minuten) und committet nach jeder Messung. So überbrückt
+  eine einzige Ausführung die typische Lücke, und die Daten erscheinen laufend
+  statt gebündelt am Ende.
+- **Jeder Lauf dauert rund zwei Stunden** — das ist so gewollt, kein hängender
+  Job. Solange einer läuft, verfallen zusätzliche Auslöser (GitHub hält je
+  Workflow höchstens einen wartenden Lauf vor), es staut sich also nichts.
 - **Rund 19 MB Zuwachs im Monat** im Repo bei 400 Segmenten. In deinem Gebiet
   mit 40 Segmenten ist es entsprechend weniger, etwa 2 MB.
 - **Ab 3 Tagen** trägt die Gesamtkarte, **ab 1–2 Wochen** die
