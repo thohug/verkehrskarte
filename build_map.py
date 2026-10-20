@@ -306,22 +306,39 @@ const grenzen = L.latLngBounds([]);
 const VERSATZ_M = 7;
 
 function versetzt(punkte, meter) {
-  if (punkte.length < 2) return punkte;
-  const mProGradLat = 111320;
+  const mLat = 111320;
+  const mLng = mLat * Math.cos((punkte[0] ? punkte[0][0] : 47.5) * Math.PI / 180);
+  // In lokale Meter umrechnen und doppelte Folgepunkte entfernen. HERE haengt
+  // mehrere Links aneinander, Endpunkt = Anfangspunkt; ein Teilstueck der
+  // Laenge null hat keine Richtung und liess die Linie frueher zickzacken.
+  const p = [];
+  for (const [lat, lng] of punkte) {
+    const x = lng * mLng, y = lat * mLat;
+    const l = p[p.length - 1];
+    if (!l || Math.hypot(x - l[0], y - l[1]) > 0.5) p.push([x, y]);
+  }
+  if (p.length < 2) return punkte;
+
+  // Normale rechts der Fahrtrichtung fuer jedes Teilstueck: (dx,dy) -> (dy,-dx)
+  const n = [];
+  for (let i = 0; i < p.length - 1; i++) {
+    const dx = p[i+1][0] - p[i][0], dy = p[i+1][1] - p[i][1];
+    const len = Math.hypot(dx, dy);
+    n.push([dy / len, -dx / len]);
+  }
+
   const raus = [];
-  for (let i = 0; i < punkte.length; i++) {
-    // Richtung aus dem anliegenden Teilstueck (letzter Punkt: das davor)
-    const a = punkte[Math.min(i, punkte.length - 2)];
-    const b = punkte[Math.min(i, punkte.length - 2) + 1];
-    const mProGradLng = mProGradLat * Math.cos(a[0] * Math.PI / 180);
-    let dx = (b[1] - a[1]) * mProGradLng;   // Ost
-    let dy = (b[0] - a[0]) * mProGradLat;   // Nord
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len; dy /= len;
-    // rechts der Fahrtrichtung = Richtung um 90 Grad im Uhrzeigersinn: (x,y)->(y,-x)
-    const rLat = (-dx) * meter / mProGradLat;
-    const rLng = ( dy) * meter / mProGradLng;
-    raus.push([punkte[i][0] + rLat, punkte[i][1] + rLng]);
+  for (let i = 0; i < p.length; i++) {
+    const a = n[Math.max(0, i - 1)], b = n[Math.min(n.length - 1, i)];
+    // Winkelhalbierende der beiden angrenzenden Normalen; damit der Abstand
+    // zur Mittellinie ueberall gleich bleibt, durch cos(halber Knickwinkel)
+    // teilen - bei sehr spitzen Knicken begrenzt, sonst schiessen Spitzen raus.
+    let mx = a[0] + b[0], my = a[1] + b[1];
+    const ml = Math.hypot(mx, my);
+    if (ml < 1e-6) { mx = b[0]; my = b[1]; } else { mx /= ml; my /= ml; }
+    const cos = Math.max(mx * b[0] + my * b[1], 0.5);
+    const d = meter / cos;
+    raus.push([(p[i][1] + my * d) / mLat, (p[i][0] + mx * d) / mLng]);
   }
   return raus;
 }
