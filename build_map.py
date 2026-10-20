@@ -298,8 +298,36 @@ let tage = new Set([0,1,2,3,4,5,6]);   // gewaehlte Wochentage im Stundenmodus
 const linien = [];
 const grenzen = L.latLngBounds([]);
 
+// HERE liefert pro Fahrtrichtung ein eigenes Segment, oft auf exakt derselben
+// Linie (nur umgekehrte Punktreihenfolge). Uebereinander gezeichnet verdeckt
+// eine Richtung die andere. Deshalb jede Linie ein paar Meter nach RECHTS der
+// Fahrtrichtung versetzen - die Gegenrichtung weicht automatisch nach links aus,
+// beide liegen dann nebeneinander, so wie man es von Google kennt.
+const VERSATZ_M = 7;
+
+function versetzt(punkte, meter) {
+  if (punkte.length < 2) return punkte;
+  const mProGradLat = 111320;
+  const raus = [];
+  for (let i = 0; i < punkte.length; i++) {
+    // Richtung aus dem anliegenden Teilstueck (letzter Punkt: das davor)
+    const a = punkte[Math.min(i, punkte.length - 2)];
+    const b = punkte[Math.min(i, punkte.length - 2) + 1];
+    const mProGradLng = mProGradLat * Math.cos(a[0] * Math.PI / 180);
+    let dx = (b[1] - a[1]) * mProGradLng;   // Ost
+    let dy = (b[0] - a[0]) * mProGradLat;   // Nord
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    // rechts der Fahrtrichtung = Richtung um 90 Grad im Uhrzeigersinn: (x,y)->(y,-x)
+    const rLat = (-dx) * meter / mProGradLat;
+    const rLng = ( dy) * meter / mProGradLng;
+    raus.push([punkte[i][0] + rLat, punkte[i][1] + rLng]);
+  }
+  return raus;
+}
+
 for (const seg of SEGMENTE) {
-  const linie = L.polyline(seg.p, { weight: 4, opacity: .9 }).addTo(karte);
+  const linie = L.polyline(versetzt(seg.p, VERSATZ_M), { weight: 4, opacity: .9 }).addTo(karte);
   linie._seg = seg;
   linie.on('mouseover', () => linie.setStyle({ weight: 7 }));
   linie.on('mouseout',  () => linie.setStyle({ weight: 4 }));
