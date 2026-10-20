@@ -64,6 +64,13 @@ Erzeugt `karte.html`, per Doppelklick zu öffnen.
   Wochentage (einzeln antippbar, oder die Voreinstellungen *Werktag*,
   *Wochenende*, *alle Tage*). „Werktag" fasst Mo–Fr zusammen, füllt sich also
   fünfmal schneller als ein einzelner Tag.
+- **Tagesganglinie Gesamtnetz** — im Panel unten: mittlerer Stauwert des
+  ganzen Quartiernetzes je Stunde, nach Abschnittslänge gewichtet (sonst zählte
+  ein 10-m-Stummel so viel wie vier Kilometer Autobahn). Werktag und Wochenende
+  als dünne Vergleichslinien, die aktuelle Wochentagsauswahl kräftig. Ein Klick
+  ins Diagramm stellt die Karte auf diese Stunde.
+- **Fahrtrichtungen getrennt** — jede Richtung liegt einige Meter rechts ihrer
+  Fahrtrichtung, die Gegenrichtung also daneben statt verdeckt darunter.
 - **Streuung beim Hovern** — fährt man über einen Abschnitt, erscheint ein
   kleines Balkendiagramm: wie oft welcher Stauwert in genau dieser Auswahl
   vorkam, mit gestrichelter Linie beim Mittelwert. Ein breiter Balkenberg heisst

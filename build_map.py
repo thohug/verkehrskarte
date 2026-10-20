@@ -183,6 +183,7 @@ HTML_VORLAGE = """<!doctype html>
     position:absolute; z-index:1000; top:12px; left:12px; width:300px; max-width:calc(100vw - 24px);
     background:rgba(255,255,255,.94); border-radius:10px; padding:14px 16px;
     box-shadow:0 2px 16px rgba(0,0,0,.22);
+    max-height:calc(100vh - 24px); overflow-y:auto;
   }
   @media (prefers-color-scheme: dark) {
     .panel { background:rgba(28,28,30,.94); color:#eee; }
@@ -217,6 +218,12 @@ HTML_VORLAGE = """<!doctype html>
   .skala { display:flex; height:9px; border-radius:5px; overflow:hidden; margin-top:14px; }
   .skala div { flex:1; }
   .skala-text { display:flex; justify-content:space-between; font-size:11px; opacity:.65; margin-top:4px; }
+  .gang { margin-top:12px; padding-top:10px; border-top:1px solid rgba(128,128,128,.25); }
+  .gang-titel { font-size:12px; font-weight:600; margin-bottom:4px; }
+  .gang svg { display:block; cursor:pointer; }
+  .gang-legende { display:flex; gap:12px; font-size:11px; opacity:.7; margin-top:2px; }
+  .gang-legende i { display:inline-block; width:10px; height:2px; margin-right:4px; vertical-align:middle; }
+  .gang-cap { font-size:11px; opacity:.65; margin-top:3px; }
 </style>
 </head>
 <body>
@@ -246,6 +253,17 @@ HTML_VORLAGE = """<!doctype html>
     </div>
   </div>
 
+  <div class="gang">
+    <div class="gang-titel">Tagesganglinie Gesamtnetz</div>
+    <div id="gangSvg"></div>
+    <div class="gang-legende">
+      <span><i style="background:currentColor"></i>Auswahl</span>
+      <span><i style="background:#0b6ef4"></i>Mo–Fr</span>
+      <span><i style="background:#ff851b"></i>Sa–So</span>
+    </div>
+    <div class="gang-cap" id="gangCap"></div>
+  </div>
+
   <div class="skala">
     <div style="background:#2ecc40"></div><div style="background:#a8d70b"></div>
     <div style="background:#ffdc00"></div><div style="background:#ff851b"></div>
@@ -263,9 +281,14 @@ const FAECHER = 20;
 const WTAGE = ['Mo','Di','Mi','Do','Fr','Sa','So'];
 
 const karte = L.map('karte');
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap, &copy; CARTO &middot; Verkehrsdaten &copy; HERE',
-  maxZoom: 19
+// Graue Landeskarte von swisstopo: frei nutzbar ohne Schluessel, und das Grau
+// laesst die farbigen Belastungslinien gut hervortreten. (CARTO verlangt fuer
+// seine Kacheln inzwischen einen API-Key und blendet sonst ein Wasserzeichen ein.)
+L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg', {
+  attribution: '&copy; swisstopo &middot; Verkehrsdaten &copy; HERE',
+  maxNativeZoom: 18,
+  maxZoom: 19,
+  opacity: 0.45   // abgeschwaecht, damit die Belastungslinien im Vordergrund stehen
 }).addTo(karte);
 
 if (UMRISS) {
@@ -395,6 +418,121 @@ function auswahlText() {
   return `${tg}, ${String(stunde).padStart(2,'0')}:00`;
 }
 
+// --- Tagesganglinie Gesamtnetz ------------------------------------------
+// Laenge je Abschnitt in Metern: die Netzlinie wird laengengewichtet, sonst
+// zaehlte ein 10-m-Stummel gleich viel wie vier Kilometer Autobahn.
+const LAENGE = SEGMENTE.map(s => {
+  let m = 0;
+  for (let i = 1; i < s.p.length; i++) {
+    const [a1, o1] = s.p[i-1], [a2, o2] = s.p[i];
+    m += Math.hypot((a2 - a1) * 111320, (o2 - o1) * 111320 * Math.cos(a1 * Math.PI / 180));
+  }
+  return m;
+});
+
+// Mittlerer Stauwert des Netzes je Stunde fuer die gegebenen Wochentage.
+// Pro Abschnitt zuerst dessen Mittel (mit derselben Mindestzahl wie die Karte),
+// dann ueber die Abschnitte nach Laenge gewichtet.
+const gangCache = {};
+function ganglinie(wtage) {
+  const key = wtage.join(',');
+  if (gangCache[key]) return gangCache[key];
+  const werte = [];
+  for (let h = 0; h < 24; h++) {
+    let sw = 0, sl = 0;
+    SEGMENTE.forEach((seg, i) => {
+      let sj = 0, n = 0;
+      for (const t of wtage) {
+        const b = seg.h[t + '-' + h];
+        if (!b) continue;
+        sj += b[0];
+        for (const c of b[2]) n += c;
+      }
+      if (n < MIN || !LAENGE[i]) return;
+      sw += (sj / n) * LAENGE[i];
+      sl += LAENGE[i];
+    });
+    werte.push(sl ? sw / sl : null);
+  }
+  return gangCache[key] = werte;
+}
+
+function gangZeichnen() {
+  const W = 268, H = 92, LI = 22, UN = 14, OB = 4;
+  const alle = [0,1,2,3,4,5,6];
+  const auswahl = modus === 'gesamt' ? alle : [...tage].sort();
+  const wt = ganglinie([0,1,2,3,4]), we = ganglinie([5,6]), sel = ganglinie(auswahl);
+  const max = Math.max(0.5, ...[...wt, ...we, ...sel].filter(v => v != null));
+  const ymax = Math.ceil(max);
+  const x = h => LI + h * (W - LI - 4) / 23;
+  const y = v => OB + (H - UN - OB) * (1 - v / ymax);
+
+  const pfad = werte => {
+    let d = '', neu = true;
+    werte.forEach((v, h) => {
+      if (v == null) { neu = true; return; }
+      d += (neu ? 'M' : 'L') + x(h).toFixed(1) + ',' + y(v).toFixed(1);
+      neu = false;
+    });
+    return d;
+  };
+
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+  // Hilfslinien und Achsen
+  // Hilfslinien bei ganzen Stauwerten
+  for (let v = 0; v <= ymax; v++) {
+    s += `<line x1="${LI}" x2="${W-4}" y1="${y(v)}" y2="${y(v)}" stroke="currentColor" stroke-opacity=".12"/>`;
+    s += `<text x="${LI-4}" y="${y(v)+3}" font-size="9" text-anchor="end" fill="currentColor" opacity=".55">${v}</text>`;
+  }
+  for (const h of [0, 6, 12, 18, 23]) {
+    const anker = h === 0 ? 'start' : h === 23 ? 'end' : 'middle';
+    s += `<text x="${x(h)}" y="${H-3}" font-size="9" text-anchor="${anker}" fill="currentColor" opacity=".55">${h}h</text>`;
+  }
+  // gewaehlte Stunde
+  if (modus === 'stunde') {
+    s += `<line x1="${x(stunde)}" x2="${x(stunde)}" y1="${OB}" y2="${H-UN}" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="2 2"/>`;
+  }
+  s += `<path d="${pfad(wt)}" fill="none" stroke="#0b6ef4" stroke-width="1.3" opacity=".75"/>`;
+  s += `<path d="${pfad(we)}" fill="none" stroke="#ff851b" stroke-width="1.3" opacity=".75" stroke-dasharray="4 2"/>`;
+  s += `<path d="${pfad(sel)}" fill="none" stroke="currentColor" stroke-width="2.2"/>`;
+  if (modus === 'stunde' && sel[stunde] != null) {
+    s += `<circle cx="${x(stunde)}" cy="${y(sel[stunde])}" r="3.5" fill="${farbe(sel[stunde])}" stroke="currentColor" stroke-width="1"/>`;
+  }
+  // unsichtbare Klickflaechen je Stunde
+  for (let h = 0; h < 24; h++) {
+    const b = (W - LI - 4) / 23;
+    s += `<rect data-h="${h}" x="${x(h) - b/2}" y="0" width="${b}" height="${H}" fill="transparent"><title>${h}:00</title></rect>`;
+  }
+  s += '</svg>';
+  const el = document.getElementById('gangSvg');
+  el.innerHTML = s;
+  el.querySelectorAll('rect[data-h]').forEach(r => r.onclick = () => stundeSetzen(+r.dataset.h));
+
+  // Spitzenstunde der Auswahl
+  let spitze = -1;
+  sel.forEach((v, h) => { if (v != null && (spitze < 0 || v > sel[spitze])) spitze = h; });
+  const wahl = modus === 'gesamt' ? 'alle Tage'
+    : [...tage].sort().map(t => WTAGE[t]).join(' ');
+  document.getElementById('gangCap').textContent = spitze < 0
+    ? 'Noch zu wenig Daten fuer eine Ganglinie.'
+    : `Ø Stauwert, laengengewichtet · Auswahl: ${wahl} · Spitze ${spitze}:00 (${sel[spitze].toFixed(1)}) · Klick waehlt Stunde`;
+}
+
+function modusSetzen(m) {
+  modus = m;
+  document.querySelectorAll('.tabs button').forEach(x =>
+    x.classList.toggle('aktiv', x.dataset.modus === m));
+  document.getElementById('filter').style.display = m === 'gesamt' ? 'none' : 'block';
+}
+
+function stundeSetzen(h) {
+  stunde = h;
+  document.getElementById('stunde').value = h;
+  document.getElementById('stundeLabel').textContent = String(h).padStart(2,'0') + ':00';
+  if (modus !== 'stunde') modusSetzen('stunde');
+  zeichnen();
+}
+
 function zeichnen() {
   const cap = auswahlText();
   for (const linie of linien) {
@@ -415,6 +553,7 @@ function zeichnen() {
       { sticky: true }
     );
   }
+  gangZeichnen();
 }
 
 function tageAnzeigen() {
@@ -424,10 +563,7 @@ function tageAnzeigen() {
 
 document.querySelectorAll('.tabs button').forEach(b => {
   b.onclick = () => {
-    document.querySelectorAll('.tabs button').forEach(x => x.classList.remove('aktiv'));
-    b.classList.add('aktiv');
-    modus = b.dataset.modus;
-    document.getElementById('filter').style.display = modus === 'gesamt' ? 'none' : 'block';
+    modusSetzen(b.dataset.modus);
     zeichnen();
   };
 });
@@ -451,11 +587,7 @@ document.querySelectorAll('.presets a').forEach(a => {
   };
 });
 
-document.getElementById('stunde').oninput = e => {
-  stunde = +e.target.value;
-  document.getElementById('stundeLabel').textContent = String(stunde).padStart(2,'0') + ':00';
-  zeichnen();
-};
+document.getElementById('stunde').oninput = e => stundeSetzen(+e.target.value);
 
 tageAnzeigen();
 zeichnen();
